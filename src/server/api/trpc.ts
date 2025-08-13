@@ -11,6 +11,7 @@ import superjson from "superjson";
 import { ZodError } from "zod";
 
 import { db } from "@/server/db";
+import { auth } from "@/server/lib/auth";
 
 /**
  * 1. CONTEXT
@@ -25,8 +26,12 @@ import { db } from "@/server/db";
  * @see https://trpc.io/docs/server/context
  */
 export const createTRPCContext = async (opts: { headers: Headers }) => {
+  const session = await auth.api.getSession({ headers: opts.headers });
+
   return {
     db,
+    session,
+    user: session?.user,
     ...opts,
   };
 };
@@ -97,6 +102,23 @@ const timingMiddleware = t.middleware(async ({ next, path }) => {
 });
 
 /**
+ * Authentication middleware for protected procedures
+ */
+const authMiddleware = t.middleware(async ({ ctx, next }) => {
+  if (!ctx.session || !ctx.user) {
+    throw new Error("UNAUTHORIZED");
+  }
+
+  return next({
+    ctx: {
+      ...ctx,
+      session: ctx.session,
+      user: ctx.user,
+    },
+  });
+});
+
+/**
  * Public (unauthenticated) procedure
  *
  * This is the base piece you use to build new queries and mutations on your tRPC API. It does not
@@ -104,3 +126,13 @@ const timingMiddleware = t.middleware(async ({ next, path }) => {
  * are logged in.
  */
 export const publicProcedure = t.procedure.use(timingMiddleware);
+
+/**
+ * Protected (authenticated) procedure
+ *
+ * This is the base piece you use to build new queries and mutations on your tRPC API. It guarantees
+ * that a user querying is authorized and can access user session data.
+ */
+export const privateProcedure = t.procedure
+  .use(authMiddleware)
+  .use(timingMiddleware);
