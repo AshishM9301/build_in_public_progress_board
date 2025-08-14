@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { auth } from "@/server/lib/auth";
+import { authClient } from "./lib/auth-client";
 
 export async function middleware(request: NextRequest) {
     try {
-        const session = await auth.api.getSession({ headers: request.headers });
+        const session = await authClient.getSession({
+            fetchOptions: {
+                headers: request.headers,
+            },
+        });
 
         // Define private routes that require authentication
         const privateRoutes = ["/dashboard", "/profile", "/settings"];
@@ -12,8 +17,10 @@ export async function middleware(request: NextRequest) {
             request.nextUrl.pathname.startsWith(route)
         );
 
+        console.log("isPrivateRoute", isPrivateRoute);
+
         // Redirect to login if accessing private route without session
-        if (isPrivateRoute && !session) {
+        if (isPrivateRoute && !session?.data) {
             const loginUrl = new URL("/login", request.url);
             return NextResponse.redirect(loginUrl);
         }
@@ -24,7 +31,11 @@ export async function middleware(request: NextRequest) {
             request.nextUrl.pathname.startsWith(route)
         );
 
-        if (isAuthRoute && session) {
+        console.log("isAuthRoute", isAuthRoute);
+        console.log("session", session);
+
+        if (isAuthRoute && session?.data) {
+            console.log("Redirecting to dashboard");
             const dashboardUrl = new URL("/dashboard", request.url);
             return NextResponse.redirect(dashboardUrl);
         }
