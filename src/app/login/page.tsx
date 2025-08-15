@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
+import { FaGoogle, FaTwitter } from "react-icons/fa6";
 
 export default function LoginPage() {
     const [email, setEmail] = useState("");
@@ -13,7 +14,7 @@ export default function LoginPage() {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState("");
     const router = useRouter();
-    const { login } = useAuth();
+    const { login, socialLogin } = useAuth();
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -33,6 +34,24 @@ export default function LoginPage() {
         } finally {
             setIsLoading(false);
         }
+    };
+
+
+    const handleGoogleLogin = async () => {
+
+        const result = await socialLogin("google");
+
+        console.log("result--->", result);
+        if (result.success) {
+            router.push("/dashboard");
+        } else {
+            setError("Login failed");
+        }
+    };
+
+    const handleTwitterLogin = async () => {
+        const result = await socialLogin("twitter");
+        console.log("result--->", result);
     };
 
     return (
@@ -101,17 +120,28 @@ export default function LoginPage() {
                             >
                                 {isLoading ? "Signing in..." : "Sign in"}
                             </Button>
-                        </div>
 
-                        <div className="text-center">
-                            <p className="text-sm text-gray-600">
-                                Don&apos;t have an account?{" "}
-                                <Link href="/register" className="font-medium text-primary hover:text-primary/80">
-                                    Sign up
-                                </Link>
-                            </p>
                         </div>
                     </form>
+                    <div className="flex flex-col gap-2">
+                        <Button variant="outline" className="group relative w-full flex justify-center" onClick={handleGoogleLogin}>
+                            <FaGoogle className="w-4 h-4 mr-2" />
+                            Sign in with Google
+                        </Button>
+                        <Button variant="outline" className="group relative w-full flex justify-center" onClick={handleTwitterLogin}>
+                            <FaTwitter className="w-4 h-4 mr-2" />
+                            Sign in with Twitter
+                        </Button>
+                    </div>
+                    <div className="text-center">
+                        <p className="text-sm text-gray-600">
+                            Don&apos;t have an account?{" "}
+                            <Link href="/register" className="font-medium text-primary hover:text-primary/80">
+                                Sign up
+                            </Link>
+                        </p>
+                    </div>
+
                 </div>
             </div>
         </div>

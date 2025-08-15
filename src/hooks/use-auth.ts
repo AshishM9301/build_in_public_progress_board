@@ -2,6 +2,7 @@
 
 import { authClient } from "@/lib/auth-client";
 import { auth } from "@/server/lib/auth";
+import type { ProviderOptions } from "better-auth";
 import { useEffect, useState } from "react";
 
 interface User {
@@ -30,16 +31,17 @@ export function useAuth() {
         const checkAuth = async () => {
             try {
                 // Check if there's a session cookie
-                const hasSession = document.cookie.includes("better-auth-session");
+                const hasSession = await authClient.getSession();
 
                 if (hasSession) {
                     // TODO: Get actual user data from Better Auth API
+                    const user = hasSession?.data?.user;
                     setAuthState({
                         user: {
-                            id: "user-id",
-                            name: "User",
-                            email: "user@example.com",
-                            emailVerified: true,
+                            id: user?.id ?? "user-id",
+                            name: user?.name ?? "User",
+                            email: user?.email ?? "user@example.com",
+                            emailVerified: user?.emailVerified ?? false,
                         },
                         isAuthenticated: true,
                         isLoading: false,
@@ -136,6 +138,20 @@ export function useAuth() {
         }
     };
 
+    const socialLogin = async (provider: string) => {
+        try {
+            const response = await authClient.signIn.social({ provider: provider, callbackURL: "/dashboard" });
+            if (response.data) {
+                return { success: true };
+            } else {
+                return { success: false, error: response.error };
+            }
+        } catch (error) {
+            console.error("Social login error:", error);
+            return { success: false, error: "An unexpected error occurred" };
+        }
+    };
+
     const logout = async () => {
         try {
             // Call Better Auth API
@@ -162,6 +178,7 @@ export function useAuth() {
     return {
         ...authState,
         login,
+        socialLogin,
         register,
         logout,
     };

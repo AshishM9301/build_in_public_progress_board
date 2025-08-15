@@ -20,15 +20,25 @@ model Post {
 }
 
 model User {
-  id            String    @id
+  id            String   @id
   name          String
   email         String
   emailVerified Boolean
   image         String?
   createdAt     DateTime
   updatedAt     DateTime
-  sessions      Session[]
-  accounts      Account[]
+
+  // New Relations for Build-in-Public Progress Board
+  projects         Project[]
+  categories       Category[]
+  streakChallenges StreakChallenge[]
+  dailyProgress    DailyProgress[]
+  userBadges       UserBadge[]
+  streakStats      UserStreakStats[]
+
+  // Existing Relations
+  sessions Session[]
+  accounts Account[]
 
   @@unique([email])
   @@map("user")
@@ -77,4 +87,134 @@ model Verification {
   updatedAt  DateTime?
 
   @@map("verification")
+}
+
+// New Models for Build-in-Public Progress Board
+
+model Project {
+  id               String   @id @default(cuid())
+  name             String
+  description      String?
+  categoryId       String
+  userId           String
+  targetStreakDays Int
+  startDate        DateTime
+  endDate          DateTime
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relationships
+  category         Category          @relation(fields: [categoryId], references: [id])
+  user             User              @relation(fields: [userId], references: [id])
+  streakChallenges StreakChallenge[]
+  dailyProgress    DailyProgress[]
+  streakStats      UserStreakStats[]
+  userBadges       UserBadge[]
+
+  @@index([userId])
+  @@index([categoryId])
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  name      String
+  userId    String
+  createdAt DateTime @default(now())
+
+  // Relationships
+  user     User      @relation(fields: [userId], references: [id])
+  projects Project[]
+
+  @@index([userId])
+}
+
+model StreakChallenge {
+  id          String   @id @default(cuid())
+  projectId   String
+  userId      String
+  dayNumber   Int
+  targetDate  DateTime
+  isPosted    Boolean  @default(false)
+  isCompleted Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  project       Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dailyProgress DailyProgress[]
+
+  @@unique([projectId, dayNumber])
+  @@index([userId])
+  @@index([projectId])
+}
+
+model DailyProgress {
+  id          String   @id @default(cuid())
+  projectId   String
+  streakDayId String
+  userId      String
+  content     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  project   Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  streakDay StreakChallenge @relation(fields: [streakDayId], references: [id], onDelete: Cascade)
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([projectId])
+  @@index([streakDayId])
+}
+
+model Badge {
+  id          String   @id @default(cuid())
+  name        String
+  description String
+  icon        String
+  criteria    Int
+  createdAt   DateTime @default(now())
+
+  // Relationships
+  userBadges UserBadge[]
+}
+
+model UserBadge {
+  id        String   @id @default(cuid())
+  userId    String
+  badgeId   String
+  projectId String?
+  earnedAt  DateTime @default(now())
+
+  // Relationships
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badge   Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, badgeId, projectId])
+  @@index([userId])
+  @@index([badgeId])
+}
+
+model UserStreakStats {
+  id                  String    @id @default(cuid())
+  userId              String
+  projectId           String
+  currentStreak       Int       @default(0)
+  longestStreak       Int       @default(0)
+  totalPosts          Int       @default(0)
+  challengesCompleted Int       @default(0)
+  lastPostedDate      DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  // Relationships
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, projectId])
+  @@index([userId])
+  @@index([projectId])
 }
