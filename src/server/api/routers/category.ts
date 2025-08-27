@@ -18,10 +18,11 @@ export const categoryRouter = createTRPCRouter({
         .mutation(async ({ ctx, input }) => {
             const { name } = input;
             const userId = ctx.user.id;
+            const normalizedName = name.toLowerCase().trim();
 
-            // Check if category already exists for this user
+            // Check if category already exists (case-insensitive)
             const existingCategory = await ctx.db.category.findFirst({
-                where: { name, userId },
+                where: { normalizedName },
             });
 
             if (existingCategory) {
@@ -31,6 +32,7 @@ export const categoryRouter = createTRPCRouter({
             const category = await ctx.db.category.create({
                 data: {
                     name,
+                    normalizedName,
                     userId,
                 },
             });
@@ -76,9 +78,17 @@ export const categoryRouter = createTRPCRouter({
                 where: { id, userId },
                 include: {
                     projects: {
-                        where: { isActive: true },
+                        where: {
+                            project: {
+                                isActive: true,
+                            },
+                        },
                         include: {
-                            streakStats: true,
+                            project: {
+                                include: {
+                                    streakStats: true,
+                                },
+                            },
                         },
                     },
                 },
@@ -100,6 +110,7 @@ export const categoryRouter = createTRPCRouter({
         .mutation(async ({ ctx, input }) => {
             const userId = ctx.user.id;
             const { id, name } = input;
+            const normalizedName = name.toLowerCase().trim();
 
             const category = await ctx.db.category.findFirst({
                 where: { id, userId },
@@ -109,9 +120,9 @@ export const categoryRouter = createTRPCRouter({
                 throw new Error("Category not found");
             }
 
-            // Check if new name conflicts with existing category
+            // Check if new name conflicts with existing category (case-insensitive)
             const existingCategory = await ctx.db.category.findFirst({
-                where: { name, userId, id: { not: id } },
+                where: { normalizedName, userId, id: { not: id } },
             });
 
             if (existingCategory) {
@@ -120,7 +131,7 @@ export const categoryRouter = createTRPCRouter({
 
             const updatedCategory = await ctx.db.category.update({
                 where: { id },
-                data: { name },
+                data: { name, normalizedName },
             });
 
             return {
@@ -166,15 +177,10 @@ export const categoryRouter = createTRPCRouter({
             };
         }),
 
-    // Get categories with project counts (for dropdowns)
+    // Get all categories for selection (including other users' categories)
     getCategoriesForSelect: privateProcedure.query(async ({ ctx }) => {
-        const userId = ctx.user.id;
-
         const categories = await ctx.db.category.findMany({
-            where: { userId },
-            select: {
-                id: true,
-                name: true,
+            include: {
                 _count: {
                     select: {
                         projects: true,
@@ -193,4 +199,49 @@ export const categoryRouter = createTRPCRouter({
             })),
         };
     }),
+
+    // Search categories with backend filtering
+    searchCategories: privateProcedure
+        .input(z.object({
+            searchTerm: z.string().optional(),
+            limit: z.number().optional().default(10)
+        }))
+        .query(async ({ ctx, input }) => {
+            const { searchTerm, limit } = input;
+
+            const whereClause = searchTerm && searchTerm.trim().length > 0
+                ? {
+                    normalizedName: {
+                        contains: searchTerm.toLowerCase().trim(),
+                    }
+                }
+                : {};
+
+            const categories = await ctx.db.category.findMany({
+                where: whereClause,
+                select: {
+                    id: true,
+                    name: true,
+                    _count: {
+                        select: {
+                            projects: true,
+                        },
+                    },
+                },
+                orderBy: { name: "asc" },
+                take: limit,
+            });
+
+            return {
+                success: true,
+                categories: categories.map(cat => ({
+                    id: cat.id,
+                    name: cat.name,
+                    projectCount: cat._count.projects,
+                })),
+                hasExactMatch: searchTerm ? categories.some(cat =>
+                    cat.name.toLowerCase() === searchTerm.toLowerCase()
+                ) : false,
+            };
+        }),
 });

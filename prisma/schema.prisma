@@ -92,20 +92,20 @@ model Verification {
 // New Models for Build-in-Public Progress Board
 
 model Project {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   name             String
   description      String?
-  categoryId       String
   userId           String
   targetStreakDays Int
-  startDate        DateTime
-  endDate          DateTime
-  isActive         Boolean  @default(true)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  startDate        DateTime? // Nullable until user starts the project
+  endDate          DateTime? // Nullable until user starts the project
+  startedAt        DateTime? // When user actually started the project (nullable)
+  isActive         Boolean   @default(true)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   // Relationships
-  category         Category          @relation(fields: [categoryId], references: [id])
+  categories       ProjectCategory[]
   user             User              @relation(fields: [userId], references: [id])
   streakChallenges StreakChallenge[]
   dailyProgress    DailyProgress[]
@@ -113,20 +113,37 @@ model Project {
   userBadges       UserBadge[]
 
   @@index([userId])
-  @@index([categoryId])
 }
 
 model Category {
-  id        String   @id @default(cuid())
-  name      String
-  userId    String
-  createdAt DateTime @default(now())
+  id             String   @id @default(cuid())
+  name           String // Display name (can have any case/format)
+  normalizedName String   @unique // Lowercase, trimmed version for uniqueness
+  userId         String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   // Relationships
-  user     User      @relation(fields: [userId], references: [id])
-  projects Project[]
+  user     User              @relation(fields: [userId], references: [id])
+  projects ProjectCategory[]
 
   @@index([userId])
+  @@index([name])
+  @@index([normalizedName])
+}
+
+model ProjectCategory {
+  id         String   @id @default(cuid())
+  projectId  String
+  categoryId String
+  createdAt  DateTime @default(now())
+
+  project  Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, categoryId])
+  @@index([projectId])
+  @@index([categoryId])
 }
 
 model StreakChallenge {
@@ -151,13 +168,23 @@ model StreakChallenge {
 }
 
 model DailyProgress {
-  id          String   @id @default(cuid())
+  id          String @id @default(cuid())
   projectId   String
   streakDayId String
   userId      String
   content     String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+
+  // Image metadata fields
+  imageUrl        String? // S3 public URL
+  imageFilename   String? // Original filename
+  imageSize       Int? // File size in bytes
+  imageMimeType   String? // MIME type (image/jpeg, image/png, etc.)
+  imageWidth      Int? // Image dimensions
+  imageHeight     Int?
+  imageUploadedAt DateTime? // Upload timestamp
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relationships
   project   Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)

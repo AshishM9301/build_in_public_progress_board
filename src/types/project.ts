@@ -8,6 +8,7 @@ export interface Project {
   targetStreakDays: number;
   startDate: Date;
   endDate: Date;
+  startedAt?: Date; // New field: when user actually started the project
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -24,6 +25,7 @@ export interface CreateProjectInput {
   description?: string;
   categoryId: string;
   targetStreakDays: number;
+  // startDate?: Date; // Commented out - will use start button on project page instead
 }
 
 export interface UpdateProjectInput {

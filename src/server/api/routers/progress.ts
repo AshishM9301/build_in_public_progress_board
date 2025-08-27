@@ -5,6 +5,27 @@ import { createTRPCRouter, privateProcedure } from "@/server/api/trpc";
 const createDailyPostSchema = z.object({
     projectId: z.string().min(1, "Project ID is required"),
     content: z.string().min(1, "Progress content is required"),
+    imageData: z.object({
+        url: z.string().url("Valid image URL is required"),
+        filename: z.string(),
+        size: z.number(),
+        mimeType: z.string(),
+        width: z.number().optional(),
+        height: z.number().optional(),
+    }).optional(),
+});
+
+const updateDailyPostSchema = z.object({
+    id: z.string().min(1, "Progress ID is required"),
+    content: z.string().min(1, "Progress content is required"),
+    imageData: z.object({
+        url: z.string().url("Valid image URL is required"),
+        filename: z.string(),
+        size: z.number(),
+        mimeType: z.string(),
+        width: z.number().optional(),
+        height: z.number().optional(),
+    }).optional(),
 });
 
 const getProgressHistorySchema = z.object({
@@ -13,12 +34,17 @@ const getProgressHistorySchema = z.object({
     offset: z.number().int().min(0).optional().default(0),
 });
 
+const getProgressByDateSchema = z.object({
+    projectId: z.string().min(1, "Project ID is required"),
+    targetDate: z.date(),
+});
+
 export const progressRouter = createTRPCRouter({
     // Create a daily progress post
     createDailyPost: privateProcedure
         .input(createDailyPostSchema)
         .mutation(async ({ ctx, input }) => {
-            const { projectId, content } = input;
+            const { projectId, content, imageData } = input;
             const userId = ctx.user.id;
 
             // Get the project and verify ownership
@@ -50,6 +76,16 @@ export const progressRouter = createTRPCRouter({
                     streakDayId: currentStreakDay.id,
                     userId,
                     content,
+                    // Add image metadata if provided
+                    ...(imageData && {
+                        imageUrl: imageData.url,
+                        imageFilename: imageData.filename,
+                        imageSize: imageData.size,
+                        imageMimeType: imageData.mimeType,
+                        imageWidth: imageData.width,
+                        imageHeight: imageData.height,
+                        imageUploadedAt: new Date(),
+                    }),
                 },
                 include: {
                     streakDay: true,
@@ -105,6 +141,51 @@ export const progressRouter = createTRPCRouter({
             };
         }),
 
+    // Update a daily progress post
+    updateDailyPost: privateProcedure
+        .input(updateDailyPostSchema)
+        .mutation(async ({ ctx, input }) => {
+            const { id, content, imageData } = input;
+            const userId = ctx.user.id;
+
+            // Find the daily progress post
+            const dailyProgress = await ctx.db.dailyProgress.findFirst({
+                where: { id, userId },
+                include: {
+                    streakDay: true,
+                },
+            });
+
+            if (!dailyProgress) {
+                throw new Error("Progress post not found or unauthorized");
+            }
+
+            // Update the content and image data if provided
+            const updatedDailyProgress = await ctx.db.dailyProgress.update({
+                where: { id },
+                data: {
+                    content,
+                    ...(imageData && {
+                        imageUrl: imageData.url,
+                        imageFilename: imageData.filename,
+                        imageSize: imageData.size,
+                        imageMimeType: imageData.mimeType,
+                        imageWidth: imageData.width,
+                        imageHeight: imageData.height,
+                    }),
+                },
+                include: {
+                    streakDay: true,
+                },
+            });
+
+            return {
+                success: true,
+                progress: updatedDailyProgress,
+                message: "Progress post updated successfully!",
+            };
+        }),
+
     // Get progress history for a project
     getProgressHistory: privateProcedure
         .input(getProgressHistorySchema)
@@ -140,6 +221,56 @@ export const progressRouter = createTRPCRouter({
                 progress,
                 total,
                 hasMore: offset + limit < total,
+            };
+        }),
+
+    // Get progress by date for a project
+    getProgressByDate: privateProcedure
+        .input(getProgressByDateSchema)
+        .query(async ({ ctx, input }) => {
+            const { projectId, targetDate } = input;
+            const userId = ctx.user.id;
+
+            // Verify project ownership
+            const project = await ctx.db.project.findFirst({
+                where: { id: projectId, userId, isActive: true },
+            });
+
+            if (!project) {
+                throw new Error("Project not found or inactive");
+            }
+
+            const progress = await ctx.db.dailyProgress.findMany({
+                where: {
+                    projectId,
+                    userId,
+                    createdAt: {
+                        gte: targetDate,
+                        lt: new Date(targetDate.getTime() + 24 * 60 * 60 * 1000),
+                    },
+                },
+                include: {
+                    streakDay: true,
+                },
+                orderBy: { createdAt: "asc" },
+            });
+
+            const total = await ctx.db.dailyProgress.count({
+                where: {
+                    projectId,
+                    userId,
+                    createdAt: {
+                        gte: targetDate,
+                        lt: new Date(targetDate.getTime() + 24 * 60 * 60 * 1000),
+                    },
+                },
+            });
+
+            return {
+                success: true,
+                progress,
+                total,
+                hasMore: false, // No pagination for date range
             };
         }),
 

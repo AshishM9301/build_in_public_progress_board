@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
@@ -24,23 +24,27 @@ import {
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Plus, X } from "lucide-react"
 import { api } from "@/trpc/react"
 import { STREAK_GOAL_OPTIONS } from "@/types/project"
 import { toast } from "sonner"
+import { CategoryCombobox } from "@/components/category-combobox"
+import { DatePicker } from "@/components/ui/date-picker"
+import { format } from "date-fns"
+
+// Define the category object structure
+interface SelectedCategory {
+    id?: string
+    name: string
+    isNew: boolean
+    projectCount?: number
+}
 
 const createProjectSchema = z.object({
     name: z.string().min(1, "Project name is required").max(100, "Project name too long"),
     description: z.string().max(500, "Description too long").optional(),
-    categoryId: z.string().min(1, "Category is required"),
+    // startDate: z.date().optional(), // Commented out - will use start button on project page instead
     targetStreakDays: z.number().min(1, "Must be at least 1 day"),
     customStreakDays: z.number().min(1, "Must be at least 1 day").optional(),
 })
@@ -53,13 +57,36 @@ interface CreateProjectDialogProps {
 }
 
 export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogProps) {
-    const [newCategory, setNewCategory] = useState("")
-    const [showNewCategory, setShowNewCategory] = useState(false)
+    // Unified state for selected categories (both existing and new)
+    const [selectedCategories, setSelectedCategories] = useState<SelectedCategory[]>([])
 
     const utils = api.useUtils()
 
-    const { data: categories } = api.category.getUserCategories.useQuery()
-    const { data: existingCategories } = api.category.getCategoriesForSelect.useQuery()
+    const { data: categories, refetch: refetchUserCategories } = api.category.getUserCategories.useQuery()
+    const { data: categoriesForSelect, refetch: refetchCategoriesForSelect } = api.category.getCategoriesForSelect.useQuery()
+
+    // Extract categories array from the API response, default to empty array
+    const existingCategories = categoriesForSelect?.categories ?? []
+
+    // State for search
+    const [searchTerm, setSearchTerm] = useState("")
+
+    // Backend search query
+    const { data: searchResults, refetch: refetchSearchResults } = api.category.searchCategories.useQuery(
+        { searchTerm: searchTerm.trim() || undefined },
+        { enabled: searchTerm.trim().length > 0 }
+    )
+
+    // Refetch categories when dialog opens to ensure fresh data
+    useEffect(() => {
+        if (open) {
+            refetchUserCategories()
+            refetchCategoriesForSelect()
+            if (searchTerm.trim().length > 0) {
+                refetchSearchResults()
+            }
+        }
+    }, [open, refetchUserCategories, refetchCategoriesForSelect, refetchSearchResults, searchTerm])
 
     const createProject = api.project.create.useMutation({
         onSuccess: () => {
@@ -68,6 +95,8 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
             utils.streak.getStreakStats.invalidate()
             onOpenChange(false)
             form.reset()
+            // Reset selected categories
+            setSelectedCategories([])
         },
         onError: (error) => {
             toast.error(error.message || "Failed to create project")
@@ -79,8 +108,6 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
             toast.success("Category created successfully!")
             utils.category.getUserCategories.invalidate()
             utils.category.getCategoriesForSelect.invalidate()
-            setNewCategory("")
-            setShowNewCategory(false)
         },
         onError: (error) => {
             toast.error(error.message || "Failed to create category")
@@ -92,42 +119,119 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
         defaultValues: {
             name: "",
             description: "",
-            categoryId: "",
+            // startDate: new Date(), // Commented out - will use start button on project page instead
             targetStreakDays: 7,
         },
     })
 
     const watchedStreakDays = form.watch("targetStreakDays")
+    // const watchedStartDate = form.watch("startDate") // Commented out - will use start button on project page instead
 
-    const onSubmit = (data: CreateProjectForm) => {
+    const onSubmit = async (data: CreateProjectForm) => {
         const finalStreakDays = data.targetStreakDays === 0
             ? data.customStreakDays!
             : data.targetStreakDays
 
-        createProject.mutate({
-            ...data,
-            targetStreakDays: finalStreakDays,
-        })
-    }
+        try {
+            if (selectedCategories.length > 0) {
+                // Separate existing and new categories
+                const existingCategories = selectedCategories.filter(cat => !cat.isNew)
+                const newCategories = selectedCategories.filter(cat => cat.isNew)
 
-    const handleCreateCategory = () => {
-        if (newCategory.trim()) {
-            createCategory.mutate({ name: newCategory.trim() })
+                const finalCategoryIds: string[] = []
+
+                if (newCategories.length > 0) {
+                    // Create all new categories first
+                    const categoryPromises = newCategories.map(category =>
+                        createCategory.mutateAsync({ name: category.name })
+                    )
+
+                    const categoryResults = await Promise.all(categoryPromises)
+
+                    // Check if all categories were created successfully
+                    const successfulCategories = categoryResults.filter(result => result.success)
+
+                    if (successfulCategories.length > 0) {
+                        // Add all successfully created category IDs
+                        finalCategoryIds.push(...successfulCategories.map(result => result.category.id))
+                    } else {
+                        toast.error("Failed to create any new categories")
+                        return
+                    }
+                }
+
+                // Add existing category IDs
+                if (existingCategories.length > 0) {
+                    finalCategoryIds.push(...existingCategories.map(cat => cat.id!))
+                }
+
+                // Create project with all selected categories
+                createProject.mutate({
+                    ...data,
+                    targetStreakDays: finalStreakDays,
+                    categoryIds: finalCategoryIds,
+                    // startDate: data.startDate, // Commented out - will use start button on project page instead
+                })
+            } else {
+                toast.error("Please select at least one category")
+            }
+        } catch (error) {
+            toast.error("Failed to create project")
         }
     }
 
-    const handleCategorySelect = (categoryId: string) => {
-        if (categoryId === "new") {
-            setShowNewCategory(true)
-            form.setValue("categoryId", "")
+    const handleCategorySelect = (categoryId: string, isNewCategory: boolean, newCategoryName?: string) => {
+        if (isNewCategory && newCategoryName) {
+            // Add new category to the array if it's not already there
+            const categoryExists = selectedCategories.some(cat =>
+                cat.name.toLowerCase() === newCategoryName.toLowerCase()
+            )
+
+            if (!categoryExists) {
+                const newCategory: SelectedCategory = {
+                    name: newCategoryName,
+                    isNew: true
+                }
+                setSelectedCategories(prev => [...prev, newCategory])
+            }
         } else {
-            form.setValue("categoryId", categoryId)
-            setShowNewCategory(false)
+            // Add existing category if it's not already there
+            const categoryExists = selectedCategories.some(cat => cat.id === categoryId)
+
+            if (!categoryExists) {
+                const existingCategory = existingCategories.find(cat => cat.id === categoryId)
+                if (existingCategory) {
+                    const selectedCategory: SelectedCategory = {
+                        id: existingCategory.id,
+                        name: existingCategory.name,
+                        isNew: false,
+                        projectCount: existingCategory.projectCount
+                    }
+                    setSelectedCategories(prev => [...prev, selectedCategory])
+                }
+            }
         }
     }
+
+    // Reset selected categories when dialog closes
+    const handleOpenChange = (open: boolean) => {
+        if (!open) {
+            setSelectedCategories([])
+            form.reset()
+        }
+        onOpenChange(open)
+    }
+
+    // Function to remove a selected category
+    const removeCategory = (categoryName: string) => {
+        setSelectedCategories(prev => prev.filter(cat => cat.name !== categoryName))
+    }
+
+    // Check if form is valid (has name and at least one category)
+    const isFormValid = form.formState.isValid && selectedCategories.length > 0
 
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
+        <Dialog open={open} onOpenChange={handleOpenChange}>
             <DialogContent className="sm:max-w-[500px]">
                 <DialogHeader>
                     <DialogTitle>Create New Project</DialogTitle>
@@ -170,63 +274,108 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
                             )}
                         />
 
-                        <FormField
-                            control={form.control}
-                            name="categoryId"
-                            render={({ field }) => (
-                                <FormItem>
-                                    <FormLabel>Category</FormLabel>
-                                    <FormControl>
-                                        <Select onValueChange={handleCategorySelect} value={field.value}>
-                                            <SelectTrigger>
-                                                <SelectValue placeholder="Select or create a category" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {existingCategories?.map((category) => (
-                                                    <SelectItem key={category.id} value={category.id}>
-                                                        {category.name}
-                                                    </SelectItem>
-                                                ))}
-                                                <SelectItem value="new">
-                                                    <div className="flex items-center gap-2">
-                                                        <Plus className="h-4 w-4" />
-                                                        Create New Category
-                                                    </div>
-                                                </SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                    </FormControl>
-                                    <FormMessage />
-                                </FormItem>
-                            )}
-                        />
-
-                        {showNewCategory && (
-                            <div className="flex gap-2">
-                                <Input
-                                    placeholder="Enter category name"
-                                    value={newCategory}
-                                    onChange={(e) => setNewCategory(e.target.value)}
-                                    onKeyDown={(e) => e.key === "Enter" && handleCreateCategory()}
+                        <FormItem>
+                            <FormLabel>Categories</FormLabel>
+                            <FormControl>
+                                <CategoryCombobox
+                                    categories={searchTerm.trim() ? (searchResults?.categories ?? []) : (existingCategories ?? [])}
+                                    hasExactMatch={searchTerm.trim() ? searchResults?.hasExactMatch ?? false : false}
+                                    searchTerm={searchTerm}
+                                    onSearchChange={setSearchTerm}
+                                    value=""
+                                    onValueChange={(value, isNewCategory, newCategoryName) =>
+                                        handleCategorySelect(value, isNewCategory ?? false, newCategoryName)
+                                    }
+                                    placeholder="Select or create categories"
                                 />
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => setShowNewCategory(false)}
-                                >
-                                    <X className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                    type="button"
-                                    size="sm"
-                                    onClick={handleCreateCategory}
-                                    disabled={!newCategory.trim()}
-                                >
-                                    Create
-                                </Button>
+                            </FormControl>
+                        </FormItem>
+
+                        {/* Display all selected categories */}
+                        {selectedCategories.length > 0 && (
+                            <div className="space-y-3">
+                                <div className="text-sm text-muted-foreground">
+                                    Selected categories:
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                    {selectedCategories.map((category, index) => (
+                                        <Badge
+                                            key={index}
+                                            variant="secondary"
+                                            className={`group relative pr-8 ${category.isNew
+                                                ? "bg-blue-100 text-blue-800 hover:bg-blue-200 border-blue-300"
+                                                : "bg-green-100 text-green-800 hover:bg-green-200 border-green-300"
+                                                }`}
+                                        >
+                                            {category.isNew ? (
+                                                <Plus className="h-3 w-3 mr-1.5 text-blue-600" />
+                                            ) : (
+                                                <span className="mr-1.5 text-green-600">✓</span>
+                                            )}
+                                            {category.name}
+                                            {!category.isNew && category.projectCount && (
+                                                <span className="ml-1 text-xs opacity-75">
+                                                    ({category.projectCount})
+                                                </span>
+                                            )}
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => removeCategory(category.name)}
+                                                className="absolute right-1 h-4 w-4 p-0 hover:bg-black/10 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                            >
+                                                <X className="h-3 w-3" />
+                                            </Button>
+                                        </Badge>
+                                    ))}
+                                </div>
                             </div>
                         )}
+
+                        {/* Project Timeline - Commented out - will use start button on project page instead */}
+                        {/* <div className="space-y-4">
+                            <FormField
+                                control={form.control}
+                                name="startDate"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Start Date</FormLabel>
+                                        <FormControl>
+                                            <DatePicker
+                                                date={field.value}
+                                                onDateChange={field.onChange}
+                                                placeholder="Choose when to start your project"
+                                            />
+                                        </FormControl>
+                                        <FormDescription>
+                                            When do you want to start your streak challenge?
+                                        </FormDescription>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+
+                            <FormItem>
+                                <FormLabel>End Date</FormLabel>
+                                <FormControl>
+                                    <Input
+                                        value={(() => {
+                                            if (!watchedStartDate || !watchedStreakDays) return "Select start date and streak days"
+
+                                            const endDate = new Date(watchedStartDate)
+                                            endDate.setDate(watchedStartDate.getDate() + watchedStreakDays - 1)
+                                            return format(endDate, "PPP")
+                                        })()}
+                                        disabled
+                                        className="bg-muted"
+                                    />
+                                </FormControl>
+                                <FormDescription>
+                                    Automatically calculated based on start date and streak duration
+                                </FormDescription>
+                            </FormItem>
+                        </div> */}
 
                         <FormField
                             control={form.control}
@@ -235,21 +384,19 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
                                 <FormItem>
                                     <FormLabel>Streak Challenge Goal</FormLabel>
                                     <FormControl>
-                                        <Select
-                                            onValueChange={(value) => field.onChange(parseInt(value))}
-                                            value={field.value.toString()}
-                                        >
-                                            <SelectTrigger>
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {STREAK_GOAL_OPTIONS.map((option) => (
-                                                    <SelectItem key={option.value} value={option.value.toString()}>
-                                                        {option.label}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {STREAK_GOAL_OPTIONS.map((option) => (
+                                                <Button
+                                                    key={option.value}
+                                                    type="button"
+                                                    variant={field.value === option.value ? "default" : "outline"}
+                                                    className="justify-start"
+                                                    onClick={() => field.onChange(option.value)}
+                                                >
+                                                    {option.label}
+                                                </Button>
+                                            ))}
+                                        </div>
                                     </FormControl>
                                     <FormDescription>
                                         Choose how many consecutive days you want to post about your project.
@@ -285,15 +432,15 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
                             <Button
                                 type="button"
                                 variant="outline"
-                                onClick={() => onOpenChange(false)}
+                                onClick={() => handleOpenChange(false)}
                             >
                                 Cancel
                             </Button>
                             <Button
                                 type="submit"
-                                disabled={createProject.isLoading}
+                                disabled={createProject.isPending || !isFormValid}
                             >
-                                {createProject.isLoading ? "Creating..." : "Create Project"}
+                                {createProject.isPending ? "Creating..." : "Create Project"}
                             </Button>
                         </DialogFooter>
                     </form>

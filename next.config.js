@@ -5,6 +5,33 @@
 import "./src/env.js";
 
 /** @type {import("next").NextConfig} */
-const config = {};
+const config = {
+    images: {
+        remotePatterns: [
+            // S3 bucket patterns
+            {
+                protocol: 'https',
+                hostname: '*.s3.amazonaws.com',
+                port: '',
+                pathname: '/**',
+            },
+            {
+                protocol: 'https',
+                hostname: '*.s3.*.amazonaws.com',
+                port: '',
+                pathname: '/**',
+            },
+            // Allow local development images
+            {
+                protocol: 'http',
+                hostname: 'localhost',
+                port: '3000',
+                pathname: '/**',
+            },
+            // Allow data URLs for clipboard images (temporary preview)
+
+        ],
+    },
+};
 
 export default config;

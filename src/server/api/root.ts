@@ -5,6 +5,7 @@ import { progressRouter } from "@/server/api/routers/progress";
 import { badgeRouter } from "@/server/api/routers/badge";
 import { notificationRouter } from "@/server/api/routers/notification";
 import { streakRouter } from "@/server/api/routers/streak";
+import { uploadRouter } from "@/server/api/routers/upload";
 import { createCallerFactory, createTRPCRouter } from "@/server/api/trpc";
 
 /**
@@ -20,6 +21,7 @@ export const appRouter = createTRPCRouter({
   badge: badgeRouter,
   notification: notificationRouter,
   streak: streakRouter,
+  upload: uploadRouter,
 });
 
 // export type definition of API

@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress"
 import { useAuth } from "@/hooks/use-auth"
 import { api } from "@/trpc/react"
+import { CreateProjectDialog } from "./create-project-dialog"
 
 export function ProgressBoard() {
   const { user } = useAuth()
@@ -209,19 +210,7 @@ export function ProgressBoard() {
       </div>
 
       {/* Create Project Dialog - Simplified for now */}
-      {showCreateProject && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg max-w-md w-full mx-4">
-            <h2 className="text-xl font-semibold mb-4">Create New Project</h2>
-            <p className="text-muted-foreground mb-4">
-              This feature is coming soon! For now, you can see your progress overview.
-            </p>
-            <Button onClick={() => setShowCreateProject(false)} className="w-full">
-              Close
-            </Button>
-          </div>
-        </div>
-      )}
+      <CreateProjectDialog open={showCreateProject} onOpenChange={setShowCreateProject} />
     </div>
   )
 }
