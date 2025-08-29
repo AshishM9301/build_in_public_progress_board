@@ -24,15 +24,6 @@ export default function SingleProjectPage() {
     const project = projectData?.project
 
     const utils = api.useUtils()
-    const startProject = api.project.startProject.useMutation({
-        onSuccess: () => {
-            toast.success("Project started successfully!")
-            utils.project.getProject.invalidate({ id: projectId })
-        },
-        onError: (error) => {
-            toast.error(error.message || "Failed to start project")
-        },
-    })
 
     if (isLoading) {
         return (
@@ -61,7 +52,8 @@ export default function SingleProjectPage() {
 
     const getStreakProgress = () => {
         const totalDays = project.targetStreakDays
-        const completedDays = project.dailyProgress?.length ?? 0
+        // Use progressStats if available, otherwise fallback to old logic
+        const completedDays = (project as any).progressStats?.uniqueDaysWithPosts ?? project.dailyProgress?.length ?? 0
 
         return {
             completed: completedDays,
@@ -207,17 +199,17 @@ export default function SingleProjectPage() {
                         <CardContent>
                             <div className="space-y-4">
                                 <div className="flex justify-between items-center">
-                                    <span className="text-sm font-medium">Progress Posts</span>
+                                    <span className="text-sm font-medium">Progress Days</span>
                                     <span className="text-sm text-muted-foreground">
-                                        {project.dailyProgress?.length ?? 0} of {project.targetStreakDays}
+                                        {(project as any).progressStats?.uniqueDaysWithPosts ?? project.dailyProgress?.length ?? 0} of {project.targetStreakDays}
                                     </span>
                                 </div>
                                 <div className="space-y-2">
                                     <div className="flex justify-between text-sm">
                                         <span>Completion Rate</span>
-                                        <span>{Math.round(((project.dailyProgress?.length ?? 0) / project.targetStreakDays) * 100)}%</span>
+                                        <span>{(project as any).progressStats?.completionPercentage ?? Math.round(((project.dailyProgress?.length ?? 0) / project.targetStreakDays) * 100)}%</span>
                                     </div>
-                                    <Progress value={((project.dailyProgress?.length ?? 0) / project.targetStreakDays) * 100} className="h-2" />
+                                    <Progress value={(project as any).progressStats?.completionPercentage ?? ((project.dailyProgress?.length ?? 0) / project.targetStreakDays) * 100} className="h-2" />
                                 </div>
                                 {project.dailyProgress && project.dailyProgress.length > 0 && project.dailyProgress[0] && (
                                     <div className="text-sm text-muted-foreground">
@@ -240,35 +232,12 @@ export default function SingleProjectPage() {
                             </CardTitle>
                         </CardHeader>
                         <CardContent>
-                            {project.startedAt ? (
-                                // Project started - show status
-                                <Badge
-                                    variant="secondary"
-                                    className={`w-full justify-center text-sm py-2 ${getStatusColor()}`}
-                                >
-                                    {getStatusText()}
-                                </Badge>
-                            ) : (
-                                // Project not started yet - show start button
-                                <div className="space-y-3">
-                                    <Badge
-                                        variant="secondary"
-                                        className="w-full justify-center text-sm py-2 bg-gray-100 text-gray-800"
-                                    >
-                                        Not Started
-                                    </Badge>
-                                    <Button
-                                        onClick={() => startProject.mutate({ projectId })}
-                                        className="w-full"
-                                        disabled={startProject.isPending}
-                                    >
-                                        {startProject.isPending ? "Starting..." : "Start Project"}
-                                    </Button>
-                                    <p className="text-xs text-muted-foreground text-center">
-                                        Click to begin your {project.targetStreakDays}-day streak challenge
-                                    </p>
-                                </div>
-                            )}
+                            <Badge
+                                variant="secondary"
+                                className={`w-full justify-center text-sm py-2 ${getStatusColor()}`}
+                            >
+                                {getStatusText()}
+                            </Badge>
                         </CardContent>
                     </Card>
 

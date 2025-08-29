@@ -14,6 +14,15 @@ export interface Project {
   updatedAt: Date;
   category?: Category;
   streakStats?: UserStreakStats;
+  categories?: Array<{ category: Category }>;
+  dailyProgress?: DailyProgress[];
+  streakChallenges?: StreakChallenge[];
+  progressStats?: {
+    uniqueDaysWithPosts: number;
+    completedStreakDays: number;
+    totalPosts: number;
+    completionPercentage: number;
+  };
   _count?: {
     streakChallenges: number;
     dailyProgress: number;
@@ -80,7 +89,7 @@ export interface DailyProgress {
   streakDayId?: string; // Made optional for date-based approach
   userId: string;
   content: string;
-  
+
   // Image metadata fields
   imageUrl?: string;
   imageFilename?: string;
@@ -89,7 +98,7 @@ export interface DailyProgress {
   imageWidth?: number;
   imageHeight?: number;
   imageUploadedAt?: Date;
-  
+
   createdAt: Date;
   updatedAt: Date;
   project?: Project;

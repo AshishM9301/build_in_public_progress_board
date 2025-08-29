@@ -162,6 +162,14 @@ export const projectRouter = createTRPCRouter({
                         },
                     },
                     streakStats: true,
+                    streakChallenges: {
+                        orderBy: { dayNumber: "asc" },
+                        include: {
+                            dailyProgress: {
+                                orderBy: { createdAt: "desc" },
+                            },
+                        },
+                    },
                     dailyProgress: {
                         orderBy: { createdAt: "desc" },
                     },
@@ -172,9 +180,39 @@ export const projectRouter = createTRPCRouter({
                 throw new Error("Project not found");
             }
 
+            // Calculate progress based on unique days with posts, not total posts
+            const uniqueDaysWithPosts = new Set();
+            const completedStreakDays = new Set();
+
+            // Count unique days from dailyProgress
+            project.dailyProgress?.forEach(progress => {
+                const dayKey = progress.createdAt.toDateString();
+                uniqueDaysWithPosts.add(dayKey);
+            });
+
+            // Count completed streak challenges
+            project.streakChallenges?.forEach(challenge => {
+                if (challenge.isCompleted || challenge.dailyProgress.length > 0) {
+                    completedStreakDays.add(challenge.dayNumber);
+                }
+            });
+
+            // Add computed progress data
+            const projectWithProgress = {
+                ...project,
+                progressStats: {
+                    uniqueDaysWithPosts: uniqueDaysWithPosts.size,
+                    completedStreakDays: completedStreakDays.size,
+                    totalPosts: project.dailyProgress?.length ?? 0,
+                    completionPercentage: project.targetStreakDays > 0
+                        ? Math.round((uniqueDaysWithPosts.size / project.targetStreakDays) * 100)
+                        : 0,
+                },
+            };
+
             return {
                 success: true,
-                project,
+                project: projectWithProgress,
             };
         }),
 
