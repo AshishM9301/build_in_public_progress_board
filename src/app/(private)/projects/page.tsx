@@ -24,11 +24,14 @@ import {
 } from "@/components/ui/pagination"
 import { Plus, Search, Edit, Trash2, Eye } from "lucide-react"
 import { api } from "@/trpc/react"
+import { DeleteProjectDialog } from "@/app/_components/delete-project-dialog"
 
 export default function ProjectsPage() {
     const router = useRouter()
     const [searchTerm, setSearchTerm] = useState("")
     const [currentPage, setCurrentPage] = useState(1)
+    const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+    const [projectToDelete, setProjectToDelete] = useState<{ id: string; name: string } | null>(null)
     const itemsPerPage = 10
 
     const { data: projectsData, isLoading } = api.project.getUserProjects.useQuery()
@@ -56,25 +59,21 @@ export default function ProjectsPage() {
         router.push(`/projects/${projectId}/edit`)
     }
 
-    const handleDeleteProject = async (projectId: string) => {
-        // TODO: Implement delete functionality
-        console.log("Delete project:", projectId)
+    const handleDeleteProject = (projectId: string, projectName: string) => {
+        setProjectToDelete({ id: projectId, name: projectName })
+        setIsDeleteDialogOpen(true)
     }
 
     const getStreakProgress = (project: any) => {
         const totalDays = project.targetStreakDays
-        const completedDays = project.streakChallenges?.filter((challenge: any) =>
-            challenge.isCompleted
-        ).length ?? 0
+        const completedDays = project._count?.dailyProgress ?? 0
 
         return `${completedDays}/${totalDays}`
     }
 
     const getStatusColor = (project: any) => {
         const totalDays = project.targetStreakDays
-        const completedDays = project.streakChallenges?.filter((challenge: any) =>
-            challenge.isCompleted
-        ).length ?? 0
+        const completedDays = project._count?.dailyProgress ?? 0
 
         if (completedDays === totalDays) return "bg-green-100 text-green-800"
         if (completedDays > 0) return "bg-blue-100 text-blue-800"
@@ -83,9 +82,7 @@ export default function ProjectsPage() {
 
     const getStatusText = (project: any) => {
         const totalDays = project.targetStreakDays
-        const completedDays = project.streakChallenges?.filter((challenge: any) =>
-            challenge.isCompleted
-        ).length ?? 0
+        const completedDays = project._count?.dailyProgress ?? 0
 
         if (completedDays === totalDays) return "Completed"
         if (completedDays > 0) return "In Progress"
@@ -157,87 +154,92 @@ export default function ProjectsPage() {
                                 </TableCell>
                             </TableRow>
                         ) : (
-                            paginatedProjects.map((project) => (
-                                <TableRow
-                                    key={project.id}
-                                    className="cursor-pointer hover:bg-muted/50"
-                                    onClick={() => handleProjectClick(project.id)}
-                                >
-                                    <TableCell>
-                                        <div>
-                                            <div className="font-medium">{project.name}</div>
-                                            {project.description && (
-                                                <div className="text-sm text-muted-foreground truncate max-w-xs">
-                                                    {project.description}
-                                                </div>
-                                            )}
-                                        </div>
-                                    </TableCell>
-                                    <TableCell>
-                                        <div className="flex flex-wrap gap-1">
-                                            {project.categories.map((cat: any) => (
-                                                <Badge
-                                                    key={cat.category.id}
-                                                    variant="secondary"
-                                                    className="text-xs"
+                            paginatedProjects.map((project, index) => {
+                                // Create a more robust key that handles potential duplicate IDs
+                                const uniqueKey = `${project.id}-${project.name}-${index}`
+
+                                return (
+                                    <TableRow
+                                        key={uniqueKey}
+                                        className="cursor-pointer hover:bg-muted/50"
+                                        onClick={() => handleProjectClick(project.id)}
+                                    >
+                                        <TableCell>
+                                            <div>
+                                                <div className="font-medium">{project.name}</div>
+                                                {project.description && (
+                                                    <div className="text-sm text-muted-foreground truncate max-w-xs">
+                                                        {project.description}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </TableCell>
+                                        <TableCell>
+                                            <div className="flex flex-wrap gap-1">
+                                                {project.categories.map((cat: any) => (
+                                                    <Badge
+                                                        key={cat.category.id}
+                                                        variant="secondary"
+                                                        className="text-xs"
+                                                    >
+                                                        {cat.category.name}
+                                                    </Badge>
+                                                ))}
+                                            </div>
+                                        </TableCell>
+                                        <TableCell>
+                                            <div className="text-sm">
+                                                {getStreakProgress(project)} days
+                                            </div>
+                                        </TableCell>
+                                        <TableCell>
+                                            <Badge
+                                                variant="secondary"
+                                                className={getStatusColor(project)}
+                                            >
+                                                {getStatusText(project)}
+                                            </Badge>
+                                        </TableCell>
+                                        <TableCell>
+                                            <div className="flex items-center gap-2">
+                                                <Button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation()
+                                                        handleProjectClick(project.id)
+                                                    }}
+                                                    className="h-8 w-8 p-0"
                                                 >
-                                                    {cat.category.name}
-                                                </Badge>
-                                            ))}
-                                        </div>
-                                    </TableCell>
-                                    <TableCell>
-                                        <div className="text-sm">
-                                            {getStreakProgress(project)} days
-                                        </div>
-                                    </TableCell>
-                                    <TableCell>
-                                        <Badge
-                                            variant="secondary"
-                                            className={getStatusColor(project)}
-                                        >
-                                            {getStatusText(project)}
-                                        </Badge>
-                                    </TableCell>
-                                    <TableCell>
-                                        <div className="flex items-center gap-2">
-                                            <Button
-                                                size="sm"
-                                                variant="ghost"
-                                                onClick={(e) => {
-                                                    e.stopPropagation()
-                                                    handleProjectClick(project.id)
-                                                }}
-                                                className="h-8 w-8 p-0"
-                                            >
-                                                <Eye className="h-4 w-4" />
-                                            </Button>
-                                            <Button
-                                                size="sm"
-                                                variant="ghost"
-                                                onClick={(e) => {
-                                                    e.stopPropagation()
-                                                    handleEditProject(project.id)
-                                                }}
-                                                className="h-8 w-8 p-0"
-                                            >
-                                                <Edit className="h-4 w-4" />
-                                            </Button>
-                                            <Button
-                                                size="sm"
-                                                variant="ghost"
-                                                onClick={(e) => {
-                                                    e.stopPropagation()
-                                                    handleDeleteProject(project.id)
-                                                }}
-                                                className="h-8 w-8 p-0 text-destructive hover:text-destructive"
-                                            >
-                                                <Trash2 className="h-4 w-4" />
-                                            </Button>
-                                        </div>
-                                    </TableCell>
-                                </TableRow>
-                            ))
+                                                    <Eye className="h-4 w-4" />
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation()
+                                                        handleEditProject(project.id)
+                                                    }}
+                                                    className="h-8 w-8 p-0"
+                                                >
+                                                    <Edit className="h-4 w-4" />
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation()
+                                                        handleDeleteProject(project.id, project.name)
+                                                    }}
+                                                    className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </Button>
+                                            </div>
+                                        </TableCell>
+                                    </TableRow>
+                                )
+                            })
                         )}
                     </TableBody>
                 </Table>
@@ -276,6 +278,20 @@ export default function ProjectsPage() {
                         </PaginationContent>
                     </Pagination>
                 </div>
+            )}
+
+            {/* Delete Project Dialog */}
+            {projectToDelete && (
+                <DeleteProjectDialog
+                    isOpen={isDeleteDialogOpen}
+                    onClose={() => {
+                        setIsDeleteDialogOpen(false)
+                        setProjectToDelete(null)
+                    }}
+                    projectId={projectToDelete.id}
+                    projectName={projectToDelete.name}
+                    redirectAfterDelete={false}
+                />
             )}
         </div>
     )

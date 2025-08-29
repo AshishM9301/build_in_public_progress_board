@@ -47,7 +47,7 @@ export function ProjectOverview({ projects }: ProjectOverviewProps) {
   const getStreakStatus = (project: Project) => {
     const stats = project.streakStats
     if (!stats) return { current: 0, target: project.targetStreakDays, percentage: 0 }
-    
+
     const percentage = (stats.currentStreak / project.targetStreakDays) * 100
     return {
       current: stats.currentStreak,
@@ -67,13 +67,16 @@ export function ProjectOverview({ projects }: ProjectOverviewProps) {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        {projects.map((project) => {
+        {projects.map((project, index) => {
           const streakStatus = getStreakStatus(project)
           const isCompleted = streakStatus.current >= streakStatus.target
           const isActive = project.isActive
 
+          // Create a more robust key that handles potential duplicate IDs
+          const uniqueKey = `${project.id}-${project.name}-${index}`
+
           return (
-            <Card key={project.id} className={`relative ${isCompleted ? 'border-green-200 bg-green-50/50' : ''}`}>
+            <Card key={uniqueKey} className={`relative ${isCompleted ? 'border-green-200 bg-green-50/50' : ''}`}>
               {isCompleted && (
                 <div className="absolute -top-2 -right-2">
                   <Badge variant="secondary" className="bg-green-100 text-green-800">
@@ -82,7 +85,7 @@ export function ProjectOverview({ projects }: ProjectOverviewProps) {
                   </Badge>
                 </div>
               )}
-              
+
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
                   <div className="space-y-1">
@@ -111,7 +114,7 @@ export function ProjectOverview({ projects }: ProjectOverviewProps) {
                     </Button>
                   </div>
                 </div>
-                
+
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Badge variant="outline">{project.category?.name}</Badge>
                   <span>•</span>
@@ -147,7 +150,7 @@ export function ProjectOverview({ projects }: ProjectOverviewProps) {
                       <div className="text-muted-foreground">{project.targetStreakDays} days</div>
                     </div>
                   </div>
-                  
+
                   <div className="flex items-center gap-2">
                     <Calendar className="h-4 w-4 text-muted-foreground" />
                     <div>
@@ -160,8 +163,8 @@ export function ProjectOverview({ projects }: ProjectOverviewProps) {
                 {/* Action Buttons */}
                 <div className="flex gap-2">
                   {isCompleted ? (
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       className="flex-1"
                       onClick={() => {
                         // TODO: Implement extend streak functionality
@@ -171,7 +174,7 @@ export function ProjectOverview({ projects }: ProjectOverviewProps) {
                       Extend Challenge
                     </Button>
                   ) : (
-                    <Button 
+                    <Button
                       className="flex-1"
                       onClick={() => {
                         // TODO: Navigate to daily progress form

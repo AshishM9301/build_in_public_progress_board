@@ -26,23 +26,23 @@ export const projectRouter = createTRPCRouter({
             const { name, description, categoryIds, targetStreakDays } = input;
             const userId = ctx.user.id;
 
-            // Calculate start and end dates - commented out for now, will use start button on project page
-            // const projectStartDate = startDate || new Date();
-            // const endDate = new Date(projectStartDate);
-            // endDate.setDate(projectStartDate.getDate() + targetStreakDays - 1);
-            
-            // For now, create project without start/end dates - they'll be set when user clicks start button
-            // const projectStartDate = null; // Will be set when project is started
-            // const endDate = null; // Will be calculated when project is started
 
-            // Create project
+
+            // Calculate start and end dates immediately when project is created
+            const projectStartDate = new Date();
+            const endDate = new Date(projectStartDate);
+            endDate.setDate(projectStartDate.getDate() + targetStreakDays - 1);
+
+            // Create project with start date set immediately
             const project = await ctx.db.project.create({
                 data: {
                     name,
                     description,
                     userId,
                     targetStreakDays,
-                    // startDate and endDate will be set when user clicks start button
+                    startDate: projectStartDate,
+                    endDate: endDate,
+                    startedAt: projectStartDate, // Set startedAt immediately
                 },
                 include: {
                     categories: {
@@ -63,24 +63,11 @@ export const projectRouter = createTRPCRouter({
                 data: projectCategories,
             });
 
-            // Generate streak challenge days - commented out for now, will be created when project is started
-            // const streakDays = [];
-            // for (let day = 1; day <= targetStreakDays; day++) {
-            //     const targetDate = new Date(projectStartDate);
-            //     targetDate.setDate(projectStartDate.getDate() + day - 1);
 
-            //     streakDays.push({
-            //         projectId: project.id,
-            //         userId,
-            //         dayNumber: day,
-            //         targetDate,
-            //     });
-            // }
 
-            // Create all streak days - commented out for now
-            // await ctx.db.streakChallenge.createMany({
-            //     data: streakDays,
-            // });
+
+
+
 
             // Create initial streak stats
             await ctx.db.userStreakStats.create({
@@ -128,12 +115,30 @@ export const projectRouter = createTRPCRouter({
                 streakStats: true,
                 _count: {
                     select: {
-                        streakChallenges: true,
                         dailyProgress: true,
                     },
                 },
             },
         });
+
+        // Debug logging to identify potential duplicates
+        console.log(`[getUserProjects] Found ${projects.length} projects for user ${userId}`);
+
+        // Check for duplicate IDs
+        const projectIds = projects.map(p => p.id);
+        const uniqueIds = new Set(projectIds);
+        if (projectIds.length !== uniqueIds.size) {
+            console.error(`[getUserProjects] Duplicate project IDs found for user ${userId}:`,
+                projectIds.filter((id, index) => projectIds.indexOf(id) !== index));
+        }
+
+        // Check for duplicate names
+        const projectNames = projects.map(p => p.name);
+        const uniqueNames = new Set(projectNames);
+        if (projectNames.length !== uniqueNames.size) {
+            console.warn(`[getUserProjects] Duplicate project names found for user ${userId}:`,
+                projectNames.filter((name, index) => projectNames.indexOf(name) !== index));
+        }
 
         return {
             success: true,
@@ -157,17 +162,8 @@ export const projectRouter = createTRPCRouter({
                         },
                     },
                     streakStats: true,
-                    streakChallenges: {
-                        orderBy: { dayNumber: "asc" },
-                        include: {
-                            dailyProgress: true,
-                        },
-                    },
                     dailyProgress: {
                         orderBy: { createdAt: "desc" },
-                        include: {
-                            streakDay: true,
-                        },
                     },
                 },
             });
@@ -279,7 +275,7 @@ export const projectRouter = createTRPCRouter({
             };
         }),
 
-    // Extend project streak challenge
+    // Extend project streak days (date-based approach)
     extendStreak: privateProcedure
         .input(z.object({
             projectId: z.string(),
@@ -291,20 +287,14 @@ export const projectRouter = createTRPCRouter({
 
             const project = await ctx.db.project.findFirst({
                 where: { id: projectId, userId },
-                include: {
-                    streakChallenges: {
-                        orderBy: { dayNumber: "desc" },
-                        take: 1,
-                    },
-                },
             });
 
             if (!project) {
                 throw new Error("Project not found");
             }
 
-            // Get the last day number
-            const lastDayNumber = project.streakChallenges[0]?.dayNumber ?? 0;
+
+
             const newTargetDays = project.targetStreakDays + additionalDays;
 
             // Update project end date
@@ -312,27 +302,8 @@ export const projectRouter = createTRPCRouter({
                 where: { id: projectId },
                 data: {
                     targetStreakDays: newTargetDays,
-                    endDate: new Date(project.endDate.getTime() + (additionalDays * 24 * 60 * 60 * 1000)),
+                    endDate: new Date(project.endDate!.getTime() + (additionalDays * 24 * 60 * 60 * 1000)),
                 },
-            });
-
-            // Generate additional streak days
-            const newStreakDays = [];
-            for (let day = lastDayNumber + 1; day <= newTargetDays; day++) {
-                const targetDate = new Date(project.startDate);
-                targetDate.setDate(project.startDate.getDate() + day - 1);
-
-                newStreakDays.push({
-                    projectId,
-                    userId,
-                    dayNumber: day,
-                    targetDate,
-                });
-            }
-
-            // Create new streak days
-            await ctx.db.streakChallenge.createMany({
-                data: newStreakDays,
             });
 
             return {
@@ -363,63 +334,5 @@ export const projectRouter = createTRPCRouter({
             };
         }),
 
-    // Start a project (set start date and create streak challenges)
-    startProject: privateProcedure
-        .input(z.object({ projectId: z.string() }))
-        .mutation(async ({ ctx, input }) => {
-            const userId = ctx.user.id;
-            const { projectId } = input;
 
-            const project = await ctx.db.project.findFirst({
-                where: { id: projectId, userId },
-            });
-
-            if (!project) {
-                throw new Error("Project not found");
-            }
-
-            if (project.startedAt) {
-                throw new Error("Project has already been started");
-            }
-
-            // Set start date to now
-            const startDate = new Date();
-            const endDate = new Date(startDate);
-            endDate.setDate(startDate.getDate() + project.targetStreakDays - 1);
-
-            // Update project with start date
-            const updatedProject = await ctx.db.project.update({
-                where: { id: projectId },
-                data: {
-                    startDate,
-                    endDate,
-                    startedAt: startDate,
-                },
-            });
-
-            // Generate streak challenge days
-            const streakDays = [];
-            for (let day = 1; day <= project.targetStreakDays; day++) {
-                const targetDate = new Date(startDate);
-                targetDate.setDate(startDate.getDate() + day - 1);
-
-                streakDays.push({
-                    projectId: project.id,
-                    userId,
-                    dayNumber: day,
-                    targetDate,
-                });
-            }
-
-            // Create all streak days
-            await ctx.db.streakChallenge.createMany({
-                data: streakDays,
-            });
-
-            return {
-                success: true,
-                project: updatedProject,
-                message: `Project started! Your ${project.targetStreakDays}-day streak challenge begins now.`,
-            };
-        }),
 });

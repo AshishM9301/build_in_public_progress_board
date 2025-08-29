@@ -54,9 +54,10 @@ type CreateProjectForm = z.infer<typeof createProjectSchema>
 interface CreateProjectDialogProps {
     open: boolean
     onOpenChange: (open: boolean) => void
+    onProjectCreated?: () => void
 }
 
-export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogProps) {
+export function CreateProjectDialog({ open, onOpenChange, onProjectCreated }: CreateProjectDialogProps) {
     // Unified state for selected categories (both existing and new)
     const [selectedCategories, setSelectedCategories] = useState<SelectedCategory[]>([])
 
@@ -97,6 +98,8 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
             form.reset()
             // Reset selected categories
             setSelectedCategories([])
+            // Call the callback if provided
+            onProjectCreated?.()
         },
         onError: (error) => {
             toast.error(error.message || "Failed to create project")

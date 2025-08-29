@@ -136,14 +136,17 @@ export function DailyProgressForm() {
                 <SelectValue placeholder="Choose a project to update" />
               </SelectTrigger>
               <SelectContent>
-                {activeProjects.map((project) => {
+                {activeProjects.map((project, index) => {
                   const stats = project.streakStats
                   const currentStreak = stats?.currentStreak || 0
                   const targetDays = project.targetStreakDays
                   const isCompleted = currentStreak >= targetDays
 
+                  // Create a more robust key that handles potential duplicate IDs
+                  const uniqueKey = `${project.id}-${project.name}-${index}`
+
                   return (
-                    <SelectItem key={project.id} value={project.id}>
+                    <SelectItem key={uniqueKey} value={project.id}>
                       <div className="flex items-center justify-between w-full">
                         <span>{project.name}</span>
                         <div className="flex items-center gap-2">

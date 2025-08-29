@@ -26,6 +26,7 @@ interface NavMainItemProps {
       title: string
       url: string
       isActive?: boolean
+      key?: string
     }>
   }
 }
@@ -53,7 +54,7 @@ export function NavMainItem({ item }: NavMainItemProps) {
                 <CollapsibleContent>
                   <SidebarMenuSub>
                     {item.items?.map((subItem) => (
-                      <SidebarMenuSubItem key={subItem.title}>
+                      <SidebarMenuSubItem key={subItem.key || subItem.title}>
                         <SidebarMenuSubButton asChild isActive={subItem.isActive}>
                           <a href={subItem.url}>
                             <span>{subItem.title}</span>

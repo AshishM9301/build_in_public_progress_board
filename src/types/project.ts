@@ -77,13 +77,23 @@ export interface StreakChallenge {
 export interface DailyProgress {
   id: string;
   projectId: string;
-  streakDayId: string;
+  streakDayId?: string; // Made optional for date-based approach
   userId: string;
   content: string;
+  
+  // Image metadata fields
+  imageUrl?: string;
+  imageFilename?: string;
+  imageSize?: number;
+  imageMimeType?: string;
+  imageWidth?: number;
+  imageHeight?: number;
+  imageUploadedAt?: Date;
+  
   createdAt: Date;
   updatedAt: Date;
   project?: Project;
-  streakDay?: StreakChallenge;
+  streakDay?: StreakChallenge; // Made optional
   user?: User;
 }
 
@@ -252,6 +262,16 @@ export interface CanPostToday {
   nextStreakDay?: number;
   targetDate?: Date;
   todayPost?: DailyProgress;
+}
+
+// Validate Posting Date Types
+export interface ValidatePostingDateResponse {
+  success: boolean;
+  isValidDate: boolean;
+  canPost: boolean;
+  reason: string;
+  missedDate?: Date;
+  daysDifference?: number;
 }
 
 // User Types (from existing auth system)

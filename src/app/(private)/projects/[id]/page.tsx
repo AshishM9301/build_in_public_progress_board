@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -11,11 +12,13 @@ import { api } from "@/trpc/react"
 import { toast } from "sonner"
 import { EnhancedDailyProgressForm } from "@/app/_components/enhanced-daily-progress-form"
 import { ProgressPostDialog } from "@/app/_components/progress-post-dialog"
+import { DeleteProjectDialog } from "@/app/_components/delete-project-dialog"
 
 export default function SingleProjectPage() {
     const params = useParams()
     const router = useRouter()
     const projectId = params.id as string
+    const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
 
     const { data: projectData, isLoading } = api.project.getProject.useQuery({ id: projectId })
     const project = projectData?.project
@@ -58,9 +61,7 @@ export default function SingleProjectPage() {
 
     const getStreakProgress = () => {
         const totalDays = project.targetStreakDays
-        const completedDays = project.streakChallenges?.filter((challenge: { isCompleted: boolean }) =>
-            challenge.isCompleted
-        ).length ?? 0
+        const completedDays = project.dailyProgress?.length ?? 0
 
         return {
             completed: completedDays,
@@ -117,10 +118,7 @@ export default function SingleProjectPage() {
                     </Button>
                     <Button
                         variant="outline"
-                        onClick={() => {
-                            // TODO: Implement delete functionality
-                            console.log("Delete project:", projectId)
-                        }}
+                        onClick={() => setIsDeleteDialogOpen(true)}
                         className="flex items-center gap-2 text-destructive hover:text-destructive"
                     >
                         <Trash2 className="h-4 w-4" />
@@ -195,38 +193,37 @@ export default function SingleProjectPage() {
                         </CardContent>
                     </Card>
 
-                    {/* Streak Challenges */}
+                    {/* Progress Summary */}
                     <Card>
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
                                 <TrendingUp className="h-5 w-5" />
-                                Streak Challenges
+                                Progress Summary
                             </CardTitle>
                             <CardDescription>
-                                Daily challenges for your {project.targetStreakDays}-day streak
+                                Your progress on this {project.targetStreakDays}-day streak challenge
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
-                            <div className="grid grid-cols-7 gap-2">
-                                {project.streakChallenges?.map((challenge: { dayNumber: number; isCompleted: boolean; targetDate: Date }) => (
-                                    <ProgressPostDialog
-                                        key={challenge.dayNumber}
-                                        projectId={projectId}
-                                        dayNumber={challenge.dayNumber}
-                                        targetDate={challenge.targetDate}
-                                        isCompleted={challenge.isCompleted}
-                                        trigger={
-                                            <div
-                                                className={`aspect-square rounded-lg border-2 flex items-center justify-center text-sm font-medium cursor-pointer transition-colors hover:scale-105 ${challenge.isCompleted
-                                                    ? "bg-green-100 border-green-300 text-green-800 hover:bg-green-200"
-                                                    : "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"
-                                                    }`}
-                                            >
-                                                {challenge.dayNumber}
-                                            </div>
-                                        }
-                                    />
-                                ))}
+                            <div className="space-y-4">
+                                <div className="flex justify-between items-center">
+                                    <span className="text-sm font-medium">Progress Posts</span>
+                                    <span className="text-sm text-muted-foreground">
+                                        {project.dailyProgress?.length ?? 0} of {project.targetStreakDays}
+                                    </span>
+                                </div>
+                                <div className="space-y-2">
+                                    <div className="flex justify-between text-sm">
+                                        <span>Completion Rate</span>
+                                        <span>{Math.round(((project.dailyProgress?.length ?? 0) / project.targetStreakDays) * 100)}%</span>
+                                    </div>
+                                    <Progress value={((project.dailyProgress?.length ?? 0) / project.targetStreakDays) * 100} className="h-2" />
+                                </div>
+                                {project.dailyProgress && project.dailyProgress.length > 0 && project.dailyProgress[0] && (
+                                    <div className="text-sm text-muted-foreground">
+                                        Latest post: {new Date(project.dailyProgress[0].createdAt).toLocaleDateString()}
+                                    </div>
+                                )}
                             </div>
                         </CardContent>
                     </Card>
@@ -337,6 +334,14 @@ export default function SingleProjectPage() {
                     </Card>
                 </div>
             </div>
+
+            {/* Delete Project Dialog */}
+            <DeleteProjectDialog
+                isOpen={isDeleteDialogOpen}
+                onClose={() => setIsDeleteDialogOpen(false)}
+                projectId={projectId}
+                projectName={project.name}
+            />
         </div>
     )
 }

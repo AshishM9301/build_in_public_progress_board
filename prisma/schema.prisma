@@ -168,9 +168,9 @@ model StreakChallenge {
 }
 
 model DailyProgress {
-  id          String @id @default(cuid())
+  id          String  @id @default(cuid())
   projectId   String
-  streakDayId String
+  streakDayId String? // Made optional for date-based approach
   userId      String
   content     String
 
@@ -187,9 +187,9 @@ model DailyProgress {
   updatedAt DateTime @updatedAt
 
   // Relationships
-  project   Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  streakDay StreakChallenge @relation(fields: [streakDayId], references: [id], onDelete: Cascade)
-  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project   Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  streakDay StreakChallenge? @relation(fields: [streakDayId], references: [id], onDelete: Cascade) // Made optional
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([projectId])

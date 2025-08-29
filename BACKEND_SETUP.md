@@ -142,6 +142,7 @@ Body: { projectId: string, content: string }
 - Links to current streak day
 - Updates streak statistics
 - Checks badge eligibility
+- **Daily Post Limit**: Users can post up to `MAX_POSTS_PER_DAY` times per day (configurable via environment variable, default: 5)
 
 #### **Get Progress History**
 ```typescript
@@ -370,9 +371,36 @@ bun run db:reset
 - Streak status awareness
 - Personalized encouragement
 
-## 🧪 Testing
+## ⚙️ Configuration
 
-### **API Testing**
+### **Environment Variables**
+```bash
+# Database
+DATABASE_URL="postgresql://username:password@localhost:5432/database_name"
+
+# Authentication
+GOOGLE_CLIENT_ID="your_google_client_id"
+GOOGLE_CLIENT_SECRET="your_google_client_secret"
+TWITTER_CLIENT_ID="your_twitter_client_id"
+TWITTER_CLIENT_SECRET="your_twitter_client_secret"
+
+# S3 Configuration
+AWS_ACCESS_KEY_ID="your_aws_access_key"
+AWS_SECRET_ACCESS_KEY="your_aws_secret_key"
+AWS_REGION="your_aws_region"
+AWS_S3_BUCKET="your_s3_bucket_name"
+
+# Post Limits
+MAX_POSTS_PER_DAY=5  # Maximum posts per day per user per project
+```
+
+### **Daily Post Limits**
+- **Default Limit**: 5 posts per day per project
+- **Configurable**: Set via `MAX_POSTS_PER_DAY` environment variable
+- **Validation**: Applied in `canPostToday`, `validatePostingDate`, and `createDailyPost` endpoints
+- **User Experience**: Prevents spam while allowing multiple daily updates
+
+## 🧪 Testing
 ```bash
 # Test project creation
 curl -X POST /api/trpc/project.create \

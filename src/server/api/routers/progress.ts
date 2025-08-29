@@ -40,7 +40,7 @@ const getProgressByDateSchema = z.object({
 });
 
 export const progressRouter = createTRPCRouter({
-    // Create a daily progress post
+    // Create a daily progress post using date-based logic
     createDailyPost: privateProcedure
         .input(createDailyPostSchema)
         .mutation(async ({ ctx, input }) => {
@@ -50,30 +50,47 @@ export const progressRouter = createTRPCRouter({
             // Get the project and verify ownership
             const project = await ctx.db.project.findFirst({
                 where: { id: projectId, userId, isActive: true },
-                include: {
-                    streakChallenges: {
-                        where: { isCompleted: false },
-                        orderBy: { dayNumber: "asc" },
-                        take: 1,
-                    },
-                },
             });
 
             if (!project) {
                 throw new Error("Project not found or inactive");
             }
 
-            if (project.streakChallenges.length === 0) {
-                throw new Error("No more streak days available for this project");
+
+
+            // Get today's date (start of day)
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            // Count how many posts exist for today
+            const todayPostsCount = await ctx.db.dailyProgress.count({
+                where: {
+                    projectId,
+                    userId,
+                    createdAt: {
+                        gte: today,
+                        lt: new Date(today.getTime() + 24 * 60 * 60 * 1000),
+                    },
+                },
+            });
+
+            // Check if user has reached the daily post limit
+            const maxPostsPerDay = process.env.MAX_POSTS_PER_DAY ? parseInt(process.env.MAX_POSTS_PER_DAY) : 5;
+
+            if (todayPostsCount >= maxPostsPerDay) {
+                throw new Error(`You have already posted ${todayPostsCount} times today. Maximum allowed: ${maxPostsPerDay} posts per day.`);
             }
+            // If we reach here, user is under the daily limit and can post
 
-            const currentStreakDay = project.streakChallenges[0];
+            // Calculate current day number (days since project start)
+            const startDate = new Date(project.startedAt!);
+            startDate.setHours(0, 0, 0, 0);
+            const currentDayNumber = Math.floor((today.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)) + 1;
 
-            // Create the daily progress post
+            // Create the daily progress post (no need for streakDayId anymore)
             const dailyProgress = await ctx.db.dailyProgress.create({
                 data: {
                     projectId,
-                    streakDayId: currentStreakDay.id,
                     userId,
                     content,
                     // Add image metadata if provided
@@ -87,26 +104,17 @@ export const progressRouter = createTRPCRouter({
                         imageUploadedAt: new Date(),
                     }),
                 },
-                include: {
-                    streakDay: true,
-                },
             });
 
-            // Mark the streak day as posted and completed
-            await ctx.db.streakChallenge.update({
-                where: { id: currentStreakDay.id },
-                data: {
-                    isPosted: true,
-                    isCompleted: true,
-                },
-            });
 
-            // Update streak statistics
+
+            // Update or create streak statistics
             const stats = await ctx.db.userStreakStats.findFirst({
                 where: { userId, projectId },
             });
 
             if (stats) {
+                // Update existing stats
                 const newCurrentStreak = stats.currentStreak + 1;
                 const newLongestStreak = Math.max(stats.longestStreak, newCurrentStreak);
                 const newTotalPosts = stats.totalPosts + 1;
@@ -130,13 +138,26 @@ export const progressRouter = createTRPCRouter({
                         },
                     });
                 }
+            } else {
+                // Create new stats
+                await ctx.db.userStreakStats.create({
+                    data: {
+                        userId,
+                        projectId,
+                        currentStreak: 1,
+                        longestStreak: 1,
+                        totalPosts: 1,
+                        lastPostedDate: new Date(),
+                        challengesCompleted: 0,
+                    },
+                });
             }
 
             return {
                 success: true,
                 progress: dailyProgress,
-                message: `Day ${currentStreakDay.dayNumber} progress posted successfully!`,
-                streakDay: currentStreakDay.dayNumber,
+                message: `Day ${currentDayNumber} progress posted successfully!`,
+                currentDay: currentDayNumber,
                 totalStreakDays: project.targetStreakDays,
             };
         }),
@@ -151,9 +172,6 @@ export const progressRouter = createTRPCRouter({
             // Find the daily progress post
             const dailyProgress = await ctx.db.dailyProgress.findFirst({
                 where: { id, userId },
-                include: {
-                    streakDay: true,
-                },
             });
 
             if (!dailyProgress) {
@@ -173,9 +191,6 @@ export const progressRouter = createTRPCRouter({
                         imageWidth: imageData.width,
                         imageHeight: imageData.height,
                     }),
-                },
-                include: {
-                    streakDay: true,
                 },
             });
 
@@ -204,9 +219,6 @@ export const progressRouter = createTRPCRouter({
 
             const progress = await ctx.db.dailyProgress.findMany({
                 where: { projectId, userId },
-                include: {
-                    streakDay: true,
-                },
                 orderBy: { createdAt: "desc" },
                 take: limit,
                 skip: offset,
@@ -249,9 +261,6 @@ export const progressRouter = createTRPCRouter({
                         lt: new Date(targetDate.getTime() + 24 * 60 * 60 * 1000),
                     },
                 },
-                include: {
-                    streakDay: true,
-                },
                 orderBy: { createdAt: "asc" },
             });
 
@@ -281,6 +290,15 @@ export const progressRouter = createTRPCRouter({
             const { projectId } = input;
             const userId = ctx.user.id;
 
+            // Get the project
+            const project = await ctx.db.project.findFirst({
+                where: { id: projectId, userId, isActive: true },
+            });
+
+            if (!project) {
+                throw new Error("Project not found or inactive");
+            }
+
             // Get today's date (start of day)
             const today = new Date();
             today.setHours(0, 0, 0, 0);
@@ -295,9 +313,6 @@ export const progressRouter = createTRPCRouter({
                         lt: new Date(today.getTime() + 24 * 60 * 60 * 1000),
                     },
                 },
-                include: {
-                    streakDay: true,
-                },
             });
 
             // Get current streak status
@@ -305,27 +320,26 @@ export const progressRouter = createTRPCRouter({
                 where: { userId, projectId },
             });
 
-            // Get next available streak day
-            const nextStreakDay = await ctx.db.streakChallenge.findFirst({
-                where: {
-                    projectId,
-                    userId,
-                    isCompleted: false,
-                },
-                orderBy: { dayNumber: "asc" },
-            });
+            // Calculate current day number if project has started
+            let currentDayNumber = null;
+            if (project.startedAt) {
+                const startDate = new Date(project.startedAt!);
+                startDate.setHours(0, 0, 0, 0);
+                currentDayNumber = Math.floor((today.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+            }
 
             return {
                 success: true,
                 hasPostedToday: !!todayPost,
                 todayPost,
-                currentStreak: stats?.currentStreak || 0,
-                nextStreakDay: nextStreakDay?.dayNumber || null,
-                totalStreakDays: stats ? stats.totalPosts : 0,
+                currentStreak: stats?.currentStreak ?? 0,
+                currentDay: currentDayNumber,
+                totalStreakDays: project.targetStreakDays,
+                projectStarted: !!project.startedAt,
             };
         }),
 
-    // Get streak calendar for a project
+    // Get streak calendar for a project (simplified date-based approach)
     getStreakCalendar: privateProcedure
         .input(z.object({ projectId: z.string() }))
         .query(async ({ ctx, input }) => {
@@ -341,47 +355,85 @@ export const progressRouter = createTRPCRouter({
                 throw new Error("Project not found or inactive");
             }
 
-            // Get all streak days with their status
-            const streakDays = await ctx.db.streakChallenge.findMany({
+
+
+            // Get all posts for this project
+            const allPosts = await ctx.db.dailyProgress.findMany({
                 where: { projectId, userId },
-                include: {
-                    dailyProgress: true,
-                },
-                orderBy: { dayNumber: "asc" },
+                orderBy: { createdAt: "asc" },
             });
 
-            // Format calendar data
-            const calendar = streakDays.map(day => ({
-                dayNumber: day.dayNumber,
-                targetDate: day.targetDate,
-                isPosted: day.isPosted,
-                isCompleted: day.isCompleted,
-                hasProgress: day.dailyProgress.length > 0,
-                progress: day.dailyProgress[0] || null,
-            }));
+            // Calculate calendar data based on dates
+            const startDate = new Date(project.startedAt!);
+            startDate.setHours(0, 0, 0, 0);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            const daysSinceStart = Math.floor((today.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+            const calendar = [];
+
+            for (let day = 1; day <= Math.min(daysSinceStart, project.targetStreakDays); day++) {
+                const targetDate = new Date(startDate.getTime() + (day - 1) * 24 * 60 * 60 * 1000);
+                const dayPosts = allPosts.filter(post => {
+                    const postDate = new Date(post.createdAt);
+                    postDate.setHours(0, 0, 0, 0);
+                    return postDate.getTime() === targetDate.getTime();
+                });
+
+                calendar.push({
+                    dayNumber: day,
+                    targetDate,
+                    isPosted: dayPosts.length > 0,
+                    isCompleted: dayPosts.length > 0,
+                    hasProgress: dayPosts.length > 0,
+                    progress: dayPosts[0] ?? null,
+                });
+            }
+
+            const completedDays = calendar.filter(day => day.isCompleted).length;
 
             return {
                 success: true,
                 calendar,
                 totalDays: project.targetStreakDays,
-                completedDays: calendar.filter(day => day.isCompleted).length,
-                progressPercentage: Math.round((calendar.filter(day => day.isCompleted).length / project.targetStreakDays) * 100),
+                completedDays,
+                progressPercentage: Math.round((completedDays / project.targetStreakDays) * 100),
             };
         }),
 
-    // Check if user can post today (for streak validation)
+    // Check if user can post today (simplified date-based logic)
     canPostToday: privateProcedure
         .input(z.object({ projectId: z.string() }))
         .query(async ({ ctx, input }) => {
             const { projectId } = input;
             const userId = ctx.user.id;
 
-            // Get today's date
+            // Get the project
+            const project = await ctx.db.project.findFirst({
+                where: { id: projectId, userId, isActive: true },
+            });
+
+            if (!project) {
+                return {
+                    success: false,
+                    canPost: false,
+                    reason: "Project not found or inactive",
+                };
+            }
+
+
+
+            // Get today's date (start of day)
             const today = new Date();
             today.setHours(0, 0, 0, 0);
 
-            // Check if there's already a post for today
-            const todayPost = await ctx.db.dailyProgress.findFirst({
+            // Calculate current day number first
+            const startDate = new Date(project.startedAt!);
+            startDate.setHours(0, 0, 0, 0);
+            const currentDayNumber = Math.floor((today.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+
+            // Count how many posts exist for today
+            const todayPostsCount = await ctx.db.dailyProgress.count({
                 where: {
                     projectId,
                     userId,
@@ -392,38 +444,93 @@ export const progressRouter = createTRPCRouter({
                 },
             });
 
-            if (todayPost) {
+            // Check if user has reached the daily post limit
+            const maxPostsPerDay = process.env.MAX_POSTS_PER_DAY ? parseInt(process.env.MAX_POSTS_PER_DAY) : 5;
+
+            if (todayPostsCount >= maxPostsPerDay) {
                 return {
                     success: false,
                     canPost: false,
-                    reason: "Already posted today",
-                    todayPost,
+                    reason: `You have already posted ${todayPostsCount} times today. Maximum allowed: ${maxPostsPerDay} posts per day.`,
+                };
+            } else {
+                // User is under the daily limit, can post more
+                // Check if we've exceeded the target streak days
+                if (currentDayNumber > project!.targetStreakDays) {
+                    return {
+                        success: false,
+                        canPost: false,
+                        reason: "Project streak goal has been reached",
+                    };
+                }
+
+                return {
+                    success: true,
+                    canPost: true,
+                    currentDay: currentDayNumber,
+                    targetDate: today,
+                    reason: `You can post today. You have posted ${todayPostsCount} times and can post ${maxPostsPerDay - todayPostsCount} more times today.`,
+                };
+            }
+        }),
+
+    // Validate if user can post today (simplified consecutive day logic)
+    validatePostingDate: privateProcedure
+        .input(z.object({ projectId: z.string() }))
+        .mutation(async ({ ctx, input }) => {
+            const { projectId } = input;
+            const userId = ctx.user.id;
+
+            // Get the project
+            const project = await ctx.db.project.findFirst({
+                where: { id: projectId, userId, isActive: true },
+            });
+
+            if (!project) {
+                return {
+                    success: false,
+                    isValidDate: false,
+                    canPost: false,
+                    reason: "Project not found or inactive",
                 };
             }
 
-            // Check if there's a streak day available
-            const availableStreakDay = await ctx.db.streakChallenge.findFirst({
+
+
+            // Get today's date
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            // Count how many posts exist for today
+            const todayPostsCount = await ctx.db.dailyProgress.count({
                 where: {
                     projectId,
                     userId,
-                    isCompleted: false,
+                    createdAt: {
+                        gte: today,
+                        lt: new Date(today.getTime() + 24 * 60 * 60 * 1000),
+                    },
                 },
-                orderBy: { dayNumber: "asc" },
             });
 
-            if (!availableStreakDay) {
+            // Check if user has reached the daily post limit
+            const maxPostsPerDay = process.env.MAX_POSTS_PER_DAY ? parseInt(process.env.MAX_POSTS_PER_DAY) : 5;
+
+            if (todayPostsCount >= maxPostsPerDay) {
                 return {
                     success: false,
+                    isValidDate: false,
                     canPost: false,
-                    reason: "No more streak days available",
+                    reason: `You have already posted ${todayPostsCount} times today. Maximum allowed: ${maxPostsPerDay} posts per day.`,
+                };
+            } else {
+                // User is under the daily limit, can post more
+                return {
+                    success: true,
+                    isValidDate: true,
+                    canPost: true,
+                    reason: `You can post today. You have posted ${todayPostsCount} times and can post ${maxPostsPerDay - todayPostsCount} more times today.`,
                 };
             }
-
-            return {
-                success: true,
-                canPost: true,
-                nextStreakDay: availableStreakDay.dayNumber,
-                targetDate: availableStreakDay.targetDate,
-            };
         }),
 });

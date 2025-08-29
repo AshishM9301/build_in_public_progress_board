@@ -14,7 +14,7 @@ import { api } from "@/trpc/react"
 import { toast } from "sonner"
 import { useImageUpload } from "@/hooks/use-image-upload"
 import Image from "next/image"
-import { uploadImageToS3, validateImageFile } from "@/lib/s3-upload"
+import { uploadImageToS3 } from "@/lib/s3-upload"
 
 
 const dailyProgressSchema = z.object({
@@ -167,6 +167,31 @@ export function EnhancedDailyProgressForm({
     },
   })
 
+  // Ensure projectId is always set when the component mounts or project changes
+  useEffect(() => {
+    if (initialProjectId) {
+      console.log("Setting form projectId to:", initialProjectId)
+      form.setValue("projectId", initialProjectId)
+    }
+  }, [initialProjectId, form])
+
+  // Also set projectId when selectedProject changes
+  useEffect(() => {
+    if (selectedProject?.id) {
+      console.log("Setting form projectId from selectedProject to:", selectedProject.id)
+      form.setValue("projectId", selectedProject.id)
+    }
+  }, [selectedProject, form])
+
+  // Force set projectId if it's still empty after initialization
+  useEffect(() => {
+    const currentProjectId = form.getValues("projectId")
+    if (!currentProjectId && selectedProject?.id) {
+      console.log("Force setting projectId in form:", selectedProject.id)
+      form.setValue("projectId", selectedProject.id)
+    }
+  }, [form, selectedProject])
+
   // Clipboard paste functionality
   const handleClipboardPaste = useCallback(async (e: React.ClipboardEvent) => {
     e.preventDefault()
@@ -175,9 +200,9 @@ export function EnhancedDailyProgressForm({
       const clipboardData = e.clipboardData
 
       // Check for image in clipboard
-      if (clipboardData.files.length > 0) {
-        const file = clipboardData.files[0]
-        if (file && file.type.startsWith('image/')) {
+      if (clipboardData?.files?.length > 0) {
+        const file = clipboardData?.files?.[0]
+        if (file?.type?.startsWith('image/')) {
           void handleFileSelect(file)
           toast.success("Image pasted from clipboard!")
           return
@@ -185,8 +210,8 @@ export function EnhancedDailyProgressForm({
       }
 
       // Check for text in clipboard
-      const text = clipboardData.getData('text/plain')
-      if (text && text.trim()) {
+      const text = clipboardData?.getData?.('text/plain')
+      if (text?.trim()) {
         // Validate text for SQL injection
         if (containsSQLInjection(text)) {
           setClipboardError("Pasted content contains potentially unsafe characters")
@@ -215,9 +240,9 @@ export function EnhancedDailyProgressForm({
 
       try {
         // Check for image in clipboard
-        if (e.clipboardData?.files.length) {
-          const file = e.clipboardData.files[0]
-          if (file && file.type.startsWith('image/')) {
+        if (e.clipboardData?.files?.length) {
+          const file = e.clipboardData?.files?.[0]
+          if (file?.type?.startsWith('image/')) {
             void handleFileSelect(file)
             toast.success("Image pasted from clipboard!")
             return
@@ -225,8 +250,8 @@ export function EnhancedDailyProgressForm({
         }
 
         // Check for text in clipboard
-        const text = e.clipboardData?.getData('text/plain')
-        if (text && text.trim()) {
+        const text = e.clipboardData?.getData?.('text/plain')
+        if (text?.trim()) {
           // Validate text for SQL injection
           if (containsSQLInjection(text)) {
             setClipboardError("Pasted content contains potentially unsafe characters")
@@ -242,8 +267,8 @@ export function EnhancedDailyProgressForm({
           setClipboardError(null)
           toast.success("Text pasted from clipboard!")
         }
-      } catch (error) {
-        console.error("Global clipboard paste error:", error)
+      } catch (err) {
+        console.error("Global clipboard paste error:", err)
         toast.error("Failed to paste from clipboard")
       }
     }
@@ -258,24 +283,61 @@ export function EnhancedDailyProgressForm({
   }, [isDialogOpen, handleFileSelect, form])
 
   const onSubmit = async (data: DailyProgressForm) => {
+    console.log("Form submission data:", data)
+    console.log("Selected project:", selectedProject)
+    console.log("Initial project ID:", initialProjectId)
+    console.log("Form values:", form.getValues())
+    console.log("Form errors:", form.formState.errors)
+
+    // Ensure we have a valid project ID
+    const projectId = data.projectId || selectedProject?.id || initialProjectId
+
+    if (!projectId) {
+      toast.error("No active challenge found to post to. Please try again.")
+      console.error("Missing project ID:", { data, selectedProject, initialProjectId })
+      return
+    }
+
+    console.log("Using project ID:", projectId)
+
+    // Double-check that the form data is valid
+    if (!data.content || data.content.trim().length < 10) {
+      toast.error("Please enter at least 10 characters for your progress update.")
+      return
+    }
+
+    // Ensure the form data is complete
+    const formData = {
+      projectId: projectId,
+      content: data.content.trim(),
+    }
+
+    console.log("Final form data being submitted:", formData)
+
+    // Final validation before proceeding
+    if (!formData.projectId || !formData.content) {
+      toast.error("Form data is incomplete. Please try again.")
+      console.error("Incomplete form data:", formData)
+      return
+    }
     let imageData = undefined;
 
     if (editMode && existingImageUrl) {
       // Edit mode: use existing image data
       imageData = {
         url: existingImageUrl,
-        filename: existingImageData?.filename || 'existing-image',
-        size: existingImageData?.size || 0,
-        mimeType: existingImageData?.mimeType || 'image/jpeg',
+        filename: existingImageData?.filename ?? 'existing-image',
+        size: existingImageData?.size ?? 0,
+        mimeType: existingImageData?.mimeType ?? 'image/jpeg',
         width: existingImageData?.width,
         height: existingImageData?.height,
       };
-    } else if (uploadedImage && uploadedImage.file) {
+    } else if (uploadedImage?.file) {
       // Create mode: upload new image to S3
       try {
         const uploadResult = await uploadImageToS3(
           uploadedImage.file,
-          data.projectId,
+          projectId,
           "user-id" // Replace with actual user ID from context
         );
 
@@ -292,7 +354,7 @@ export function EnhancedDailyProgressForm({
           toast.error("Failed to upload image: " + uploadResult.error);
           return;
         }
-      } catch (error) {
+      } catch {
         toast.error("Failed to upload image");
         return;
       }
@@ -305,38 +367,46 @@ export function EnhancedDailyProgressForm({
         imageData,
       });
     } else {
-      createDailyPost.mutate({
-        projectId: data.projectId,
+      console.log("Calling createDailyPost with:", {
+        projectId: projectId,
         content: data.content,
         imageData,
+      })
+
+      createDailyPost.mutate({
+        projectId: formData.projectId,
+        content: formData.content,
+        imageData,
+      }, {
+        onSuccess: () => {
+          // Refresh queries to update project state
+          void utils.project.getUserProjects.invalidate()
+          void utils.progress.canPostToday.invalidate()
+        }
       });
     }
   };
 
-  // Set the project ID in the form when selectedProject changes
-  React.useEffect(() => {
-    if (selectedProject) {
-      form.setValue("projectId", selectedProject.id)
-    }
-  }, [selectedProject, form])
+
 
   const handleFileDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
-    const files = e.dataTransfer.files
-    if (files.length > 0) {
-      const file = files[0]
+    const files = e.dataTransfer?.files
+    if (files?.length > 0) {
+      const file = files?.[0]
       if (file) {
-        handleFileSelect(file)
+        void handleFileSelect(file)
       }
     }
   }
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (files && files.length > 0) {
-      const file = files[0]
+    const filesList = e.target?.files
+    const hasFile = Boolean(filesList && filesList.length > 0)
+    if (hasFile) {
+      const file = filesList?.[0]
       if (file) {
-        handleFileSelect(file)
+        void handleFileSelect(file)
       }
     }
   }
@@ -356,7 +426,28 @@ export function EnhancedDailyProgressForm({
     return (
       <div className="p-4 text-center text-muted-foreground">
         <p>Project not found.</p>
-        <p className="text-sm">Please check the project ID.</p>
+        <p className="text-sm">Please check the project ID: {initialProjectId}</p>
+      </div>
+    )
+  }
+
+  // Ensure projectId is set in form before allowing submission
+  const currentProjectId = form.getValues("projectId")
+  if (!currentProjectId && selectedProject?.id) {
+    console.log("Setting projectId in form before render:", selectedProject.id)
+    form.setValue("projectId", selectedProject.id)
+  }
+
+  console.log("Current form projectId:", currentProjectId)
+  console.log("Selected project ID:", selectedProject?.id)
+
+  // Prevent rendering if projectId is not set
+  if (!currentProjectId && !selectedProject?.id) {
+    console.error("No project ID available for form")
+    return (
+      <div className="p-4 text-center text-muted-foreground">
+        <p>Project not available.</p>
+        <p className="text-sm">Please try again or refresh the page.</p>
       </div>
     )
   }
@@ -410,13 +501,22 @@ export function EnhancedDailyProgressForm({
 
         {/* Progress Form */}
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          {/* Hidden project ID field to ensure it's always included */}
+          <input
+            type="hidden"
+            {...form.register("projectId", {
+              required: "Project ID is required",
+              value: selectedProject?.id || initialProjectId || ""
+            })}
+          />
+
           {/* Project Info Display */}
           <div className="p-3 rounded-lg bg-muted/30 border">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="font-medium">{selectedProject.name}</h3>
                 <p className="text-sm text-muted-foreground">
-                  {selectedProject.description || "No description"}
+                  {selectedProject.description ?? "No description"}
                 </p>
               </div>
               <Badge variant="secondary">
@@ -446,7 +546,7 @@ export function EnhancedDailyProgressForm({
                   </div>
                 </div>
                 <div className="mt-2 text-xs text-muted-foreground">
-                  <p>Filename: {existingImageData?.filename || 'existing-image'}</p>
+                  <p>Filename: {existingImageData?.filename ?? 'existing-image'}</p>
                   <p>Size: {existingImageData?.size ? `${(existingImageData.size / 1024 / 1024).toFixed(2)} MB` : 'Unknown'}</p>
                   {existingImageData?.width && existingImageData?.height && (
                     <p>Dimensions: {existingImageData.width} × {existingImageData.height}</p>
@@ -571,13 +671,13 @@ export function EnhancedDailyProgressForm({
 
             <Button
               type="submit"
-              disabled={createDailyPost.isPending || hasPostedToday}
+              disabled={createDailyPost.isPending}
               className="gap-2"
             >
               <Send className="h-4 w-4" />
               {createDailyPost.isPending
                 ? (editMode ? "Updating..." : "Posting...")
-                : (editMode ? "Update Progress" : "Post Progress")
+                : (editMode ? "Update Progress" : (hasPostedToday ? "Post Another Update" : "Post Progress"))
               }
             </Button>
           </div>
@@ -603,7 +703,7 @@ export function EnhancedDailyProgressForm({
   // If trigger is provided, use it as the dialog trigger
   if (trigger) {
     return (
-      <Dialog open={open} onOpenChange={onOpenChange || setIsDialogOpen}>
+      <Dialog open={open} onOpenChange={onOpenChange ?? setIsDialogOpen}>
         <DialogTrigger asChild>
           {trigger}
         </DialogTrigger>

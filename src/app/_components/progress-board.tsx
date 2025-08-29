@@ -40,7 +40,7 @@ export function ProgressBoard() {
 
   // Safely extract data with fallbacks
   const activeProjects = projects?.projects ?? []
-  const totalProjects = projects?.count ?? 0
+  const totalProjects = activeProjects.length
   const totalBadges = badgeStats?.totalBadges ?? 0
   const earnedBadges = badgeStats?.earnedBadges ?? 0
 
@@ -176,17 +176,22 @@ export function ProgressBoard() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
-                    {activeProjects.map((project: any) => (
-                      <div key={project.id} className="p-3 border rounded-lg">
-                        <h3 className="font-medium">{project.name}</h3>
-                        <p className="text-sm text-muted-foreground">
-                          {project.description || 'No description'}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Target: {project.targetStreakDays} days
-                        </p>
-                      </div>
-                    ))}
+                    {activeProjects.map((project: any, index: number) => {
+                      // Create a more robust key that handles potential duplicate IDs
+                      const uniqueKey = `${project.id}-${project.name}-${index}`
+                      
+                      return (
+                        <div key={uniqueKey} className="p-3 border rounded-lg">
+                          <h3 className="font-medium">{project.name}</h3>
+                          <p className="text-sm text-muted-foreground">
+                            {project.description || 'No description'}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Target: {project.targetStreakDays} days
+                          </p>
+                        </div>
+                      )
+                    })}
                   </div>
                 </CardContent>
               </Card>
